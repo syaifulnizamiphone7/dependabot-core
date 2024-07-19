@@ -151,9 +151,8 @@ public partial class DiscoveryWorkerTests : DiscoveryWorkerTestBase
                         FilePath = "project.csproj",
                         TargetFrameworks = ["net45"],
                         ReferencedProjectPaths = [],
-                        ExpectedDependencyCount = 2,
+                        ExpectedDependencyCount = 1,
                         Dependencies = [
-                            new("Microsoft.NETFramework.ReferenceAssemblies", "1.0.3", DependencyType.Unknown, TargetFrameworks: ["net45"], IsTransitive: true),
                             new("Some.Package", "7.0.1", DependencyType.PackagesConfig, TargetFrameworks: ["net45"]),
                         ],
                         Properties = [

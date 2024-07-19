@@ -1,0 +1,18 @@
+<Project DefaultTargets="Build">
+  <!--
+
+  Usage: dotnet msbuild DependencyReporter.proj /p:ProjectFile=path/to/project.csproj
+
+  -->
+
+  <PropertyGroup>
+    <InjectedTargetsFile>$(MSBuildThisFileDirectory)DependencyReporter.targets</InjectedTargetsFile>
+  </PropertyGroup>
+
+  <Target Name="Build">
+    <Error Text="Required property `ProjectFile` not supplied." Condition="'$(ProjectFile)' == ''" />
+
+    <MSBuild Projects="$(ProjectFile)" Targets="Restore" />
+    <MSBuild Projects="$(ProjectFile)" Targets="_ReportDependencies" Properties="CustomAfterMicrosoftCommonCrossTargetingTargets=$(InjectedTargetsFile);CustomAfterMicrosoftCommonTargets=$(InjectedTargetsFile);GenerateDependencyFile=true;RunAnalyzers=false" />
+  </Target>
+</Project>

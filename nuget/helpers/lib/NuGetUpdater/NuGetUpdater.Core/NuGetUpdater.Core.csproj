@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="DependencyReporter.proj" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="DependencyReporter.targets" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\NuGetProjects\NuGet.CommandLine\NuGet.CommandLine.csproj" />
   </ItemGroup>
 

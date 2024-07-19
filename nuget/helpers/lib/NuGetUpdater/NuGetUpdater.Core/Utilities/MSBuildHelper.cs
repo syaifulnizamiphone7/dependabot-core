@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -764,48 +765,39 @@ internal static partial class MSBuildHelper
         IReadOnlyCollection<Dependency> packages,
         Logger? logger = null)
     {
-        var tempDirectory = Directory.CreateTempSubdirectory("package-dependency-resolution_");
-        try
+        // once we can guarantee the user-specified SDK is installed, we can eliminate the call to `SidelineGlobalJsonAsync`
+        int exitCode = -1;
+        string stdout = "NOT_RUN";
+        string stderr = "NOT_RUN";
+        await SidelineGlobalJsonAsync(repoRoot, repoRoot, async () =>
         {
-            var topLevelPackagesNames = packages.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var tempProjectPath = await CreateTempProjectAsync(tempDirectory, repoRoot, projectPath, targetFramework, packages);
+            (exitCode, stdout, stderr) = await ProcessEx.RunAsync("dotnet", $"msbuild \"{DependencyDiscoveryProjectPath.Value}\" \"/p:ProjectFile={projectPath}\"", workingDirectory: Path.GetDirectoryName(projectPath));
+        });
+        ThrowOnUnauthenticatedFeed(stdout);
 
-            var (exitCode, stdout, stderr) = await ProcessEx.RunAsync("dotnet", $"build \"{tempProjectPath}\" /t:_ReportDependencies", workingDirectory: tempDirectory.FullName);
-            ThrowOnUnauthenticatedFeed(stdout);
+        if (exitCode == 0)
+        {
+            ImmutableArray<string> tfms = [targetFramework];
+            var lines = stdout.Split('\n').Select(line => line.Trim());
+            var pattern = PackagePattern();
+            var allDependencies = lines
+                .Select(line => pattern.Match(line))
+                .Where(match => match.Success)
+                .Select(match =>
+                {
+                    var packageName = match.Groups["PackageName"].Value;
+                    var _ = bool.TryParse(match.Groups["IsTopLevel"].Value, out var isTopLevel);
+                    var packageVersion = match.Groups["PackageVersion"].Value;
+                    return new Dependency(packageName, packageVersion, DependencyType.Unknown, TargetFrameworks: tfms, IsTransitive: !isTopLevel);
+                })
+                .ToArray();
 
-            if (exitCode == 0)
-            {
-                ImmutableArray<string> tfms = [targetFramework];
-                var lines = stdout.Split('\n').Select(line => line.Trim());
-                var pattern = PackagePattern();
-                var allDependencies = lines
-                    .Select(line => pattern.Match(line))
-                    .Where(match => match.Success)
-                    .Select(match =>
-                    {
-                        var PackageName = match.Groups["PackageName"].Value;
-                        var isTransitive = !topLevelPackagesNames.Contains(PackageName);
-                        return new Dependency(PackageName, match.Groups["PackageVersion"].Value, DependencyType.Unknown, TargetFrameworks: tfms, IsTransitive: isTransitive);
-                    })
-                    .ToArray();
-
-                return allDependencies;
-            }
-            else
-            {
-                logger?.Log($"dotnet build in {nameof(GetAllPackageDependenciesAsync)} failed. STDOUT: {stdout} STDERR: {stderr}");
-                return [];
-            }
+            return allDependencies;
         }
-        finally
+        else
         {
-            try
-            {
-                tempDirectory.Delete(recursive: true);
-            }
-            catch
-            {
-            }
+            logger?.Log($"dotnet build in {nameof(GetAllPackageDependenciesAsync)} failed. STDOUT: {stdout} STDERR: {stderr}");
+            return [];
         }
     }
 
@@ -955,7 +947,9 @@ internal static partial class MSBuildHelper
         return (result, targetFrameworks.ToArray());
     }
 
-    [GeneratedRegex("^\\s*NuGetData::Package=(?<PackageName>[^,]+), Version=(?<PackageVersion>.+)$")]
+    private static Lazy<string> DependencyDiscoveryProjectPath = new(() => Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, "DependencyReporter.proj"));
+
+    [GeneratedRegex("^\\s*NuGetData::Package=(?<PackageName>[^,]+), IsTopLevel=(?<IsTopLevel>[^,]+), Version=(?<PackageVersion>.+)$")]
     private static partial Regex PackagePattern();
 
     // Example output:
